@@ -1,14 +1,34 @@
-# Use Java 17 as base image
-FROM openjdk:17-jdk-slim
+# Multi-stage build
+# Stage 1: Build the application
+FROM openjdk:17-jdk-slim AS build
+WORKDIR /app
 
-# Set working directory inside container
-#WORKDIR /app
+# Copy Maven wrapper and pom.xml first (for better caching)
+COPY mvnw .
+COPY .mvn .mvn
+COPY pom.xml .
 
-# Copy the JAR file from target folder to container
-COPY target/todolist-0.0.1-SNAPSHOT.jar app.jar
+# Make mvnw executable
+RUN chmod +x ./mvnw
 
-# Expose port 8080 (Spring Boot default)
+# Download dependencies (this layer will be cached if pom.xml doesn't change)
+RUN ./mvnw dependency:go-offline -B
+
+# Copy source code
+COPY src ./src
+
+# Build the application
+RUN ./mvnw clean package -DskipTests
+
+# Stage 2: Run the application
+FROM openjdk:17-jre-slim
+WORKDIR /app
+
+# Copy the built JAR from the build stage
+COPY --from=build /app/target/todolist-0.0.1-SNAPSHOT.jar app.jar
+
+# Expose port 8080
 EXPOSE 8080
 
-# Command to run when container starts
+# Run the application
 ENTRYPOINT ["java", "-jar", "app.jar"]
